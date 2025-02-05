@@ -1,0 +1,266 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # CreditScore Prediction System Using FNN
+
+# ## Import Libraries
+
+# In[1]:
+
+
+import pandas as pd
+import numpy as np 
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.metrics import accuracy_score
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense  
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import EarlyStopping  
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout
+from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.regularizers import l2
+
+
+# ## Load Data
+
+# In[2]:
+
+
+df= pd.read_csv('synthetic_credit_data_india_balanced_approval1.csv')
+df.info()
+
+
+# ## Balanced Dataset
+
+# In[3]:
+
+
+sns.countplot(x='Approval_Status', data=df)
+plt.title('Class Distribution: Approved vs Denied')
+plt.show()
+
+
+# ## Preparing Dataset (Features,Targets,Splitting and Feature Scaling)
+
+# In[4]:
+
+
+df['Approval_Status'] = df['Approval_Status'].map({'Approved': 1, 'Denied': 0})
+X = df.drop(columns=['Approval_Status','Customer_ID','Name'])  # Features
+y = df['Approval_Status']  # Target
+X_train, X_temp, y_train, y_temp = train_test_split(X, y, test_size=0.2, random_state=42)
+X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42)
+
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+X_test = scaler.transform(X_test)
+
+print(f"X_train shape: {X_train.shape}")
+print(f"X_test shape: {X_test.shape}")
+
+
+# ## FNN MODEL
+
+# In[5]:
+
+
+def build_fnn_model(activation_func):
+    model = Sequential([
+        Dense(64, input_dim=X_train.shape[1], activation=activation_func),
+        Dense(32, activation=activation_func),
+        Dense(1, activation='sigmoid')  # Output layer (binary classification)
+    ])
+    
+    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+    return model
+
+model_relu = build_fnn_model('relu')
+model_relu.summary()
+history_relu = model_relu.fit(X_train, y_train, epochs=20, batch_size=32, validation_data=(X_test, y_test), verbose=1)
+
+
+# ## Comparing all Activation Functions
+
+# In[6]:
+
+
+activation_functions = ['relu', 'sigmoid', 'tanh']
+history_dict = {}
+
+# Store results for comparison
+results = {
+    'Activation Function': [],
+    'Train Accuracy': [],
+    'Validation Accuracy': [],
+    'Train Loss': [],
+    'Validation Loss': []
+}
+
+for activation in activation_functions:
+    print(f"Training model with {activation} activation...")
+    model = build_fnn_model(activation)
+    history = model.fit(X_train, y_train, epochs=20, batch_size=32, validation_data=(X_test, y_test), verbose=0)
+    
+    # Store results for comparison table
+    results['Activation Function'].append(activation)
+    results['Train Accuracy'].append(history.history['accuracy'][-1])
+    results['Validation Accuracy'].append(history.history['val_accuracy'][-1])
+    results['Train Loss'].append(history.history['loss'][-1])
+    results['Validation Loss'].append(history.history['val_loss'][-1])
+    
+    history_dict[activation] = history
+
+comparison_df = pd.DataFrame(results)
+print(comparison_df)
+
+
+# ## Loss Curves
+
+# In[7]:
+
+
+plt.figure(figsize=(12, 6))
+
+# Plot accuracy
+plt.subplot(1, 2, 1)
+for activation in activation_functions:
+    plt.plot(history_dict[activation].history['accuracy'], label=f'Train {activation}')
+    plt.plot(history_dict[activation].history['val_accuracy'], label=f'Validation {activation}')
+plt.title('Training and Validation Accuracy')
+plt.xlabel('Epochs')
+plt.ylabel('Accuracy')
+plt.legend()
+
+# Plot loss
+plt.subplot(1, 2, 2)
+for activation in activation_functions:
+    plt.plot(history_dict[activation].history['loss'], label=f'Train {activation}')
+    plt.plot(history_dict[activation].history['val_loss'], label=f'Validation {activation}')
+plt.title('Training and Validation Loss')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.legend()
+
+plt.tight_layout()
+plt.show()
+
+
+# ## trainning vs Validation Loss
+
+# In[8]:
+
+
+fig, ax = plt.subplots(figsize=(10, 6))
+bar_width = 0.35  # Width of the bars
+index = np.arange(len(activation_functions))  # x-axis positions for activation functions
+
+ax.bar(index, results['Train Loss'], bar_width, label='Train Loss', alpha=0.7, color='blue')
+ax.bar(index + bar_width, results['Validation Loss'], bar_width, label='Validation Loss', alpha=0.7, color='orange')
+
+ax.set_title('Training vs Validation Loss')
+ax.set_xlabel('Activation Function')
+ax.set_ylabel('Loss')
+ax.set_xticks(index + bar_width / 2)  # Position the x-axis labels in between the bars
+ax.set_xticklabels(activation_functions)
+ax.legend()
+
+plt.tight_layout()
+plt.show()
+
+
+# ## Best Model
+
+# In[27]:
+
+
+best_model = build_fnn_model('relu')
+best_model.fit(X_train, y_train, epochs=20, batch_size=32, validation_data=(X_test, y_test), verbose=1)
+
+y_pred = (best_model.predict(X_test) > 0.5).astype("int32")
+accuracy = accuracy_score(y_test, y_pred)
+print(f"Test Accuracy: {accuracy * 100:.2f}%")
+
+sample_predictions = pd.DataFrame({
+    'Actual Outcome': ['Approved' if val == 1 else 'Denied' for val in y_test[:10].values],
+    'Predicted Outcome': ['Approved' if val == 1 else 'Denied' for val in y_pred[:10].flatten()]
+})
+train_accuracy = history.history['accuracy'][-2]  
+print(f"Training Accuracy: {train_accuracy * 100:.2f}%")
+print("Sample Credit Score Predictions:")
+print(sample_predictions.to_string(index=False))
+
+
+# # L2 REGULIRIZATION ,Dropout,Early Stopping to Prevent Overfitting
+
+# In[18]:
+
+
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout
+from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.regularizers import l2
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.metrics import accuracy_score
+
+early_stopping = EarlyStopping(monitor='val_loss', patience=2, restore_best_weights=True)
+
+model = Sequential()
+model.add(Dense(32, input_dim=X_train.shape[1], activation='relu', kernel_regularizer=l2(0.07)))  # Reduced L2 regularization
+model.add(Dropout(0.8))  # Reduced dropout rate
+model.add(Dense(16, activation='relu', kernel_regularizer=l2(0.07)))  # Reduced L2 regularization
+model.add(Dropout(0.8))  # Reduced dropout rate
+model.add(Dense(1, activation='sigmoid'))  # Output layer (binary classification)
+
+
+model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+history = model.fit(X_train, y_train, epochs=100, batch_size=32, validation_data=(X_test, y_test), callbacks=[early_stopping])
+
+train_accuracy = model.evaluate(X_train, y_train, verbose=0)[1]
+test_accuracy = model.evaluate(X_test, y_test, verbose=0)[1]
+y_pred = (model.predict(X_test) > 0.5).astype("int32")
+
+sample_predictions = pd.DataFrame({
+    'Actual Outcome': ['Approved' if val == 1 else 'Denied' for val in y_test[:10].values],
+    'Predicted Outcome': ['Approved' if val == 1 else 'Denied' for val in y_pred[:10].flatten()]
+})
+
+print("Sample Credit Score Predictions:")
+print(sample_predictions.to_string(index=False))
+
+# Plotting the loss curves
+plt.plot(history.history['loss'], label='Training Loss')
+plt.plot(history.history['val_loss'], label='Validation Loss')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.legend()
+plt.title('Loss Curve')
+plt.show()
+print(f"Training Accuracy: {train_accuracy * 100:.2f}%")
+print(f"Testing Accuracy: {test_accuracy * 100:.2f}%\n")
+
+
+# In[19]:
+
+
+from sklearn.metrics import precision_score, recall_score, f1_score
+
+precision = precision_score(y_test, y_pred)
+recall = recall_score(y_test, y_pred)
+f1 = f1_score(y_test, y_pred)
+
+print(f"Precision: {precision:.2f}")
+print(f"Recall: {recall:.2f}")
+print(f"F1 Score: {f1:.2f}")
+
+
+# In[ ]:
+
+
+
+
+
